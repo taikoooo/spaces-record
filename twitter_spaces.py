@@ -231,7 +231,7 @@ def main(setDict):
     :-------  |:----: | :----
     user_id   |  可选  |  用户rest_id，注意不是screen_name，默认为用户kaguramea_vov的id
     save_path |  可选  |  文件存储路径，默认为主程序文件夹下的"./rec/{user_id}"
-    cookie    |  必选  |  账号cookie，因推特必须登录使用，无cookie无法运行（未设置防错）
+    cookie    |  必选  |  账号cookie，因推特必须登录使用，无cookie无法运行
     '''
     # 运行参数初始化
     userId = setDict.get('user_id', '1130858667547299841')
