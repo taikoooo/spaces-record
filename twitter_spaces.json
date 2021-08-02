@@ -1,5 +1,8 @@
 {
     "user_id": "1130858667547299841",
     "save_path": "./rec/kaguramea_vov",
-    "cookie": {}
+    "cookie": {},
+    "invl_twit": 60,
+    "invl_twit_err": 10,
+    "times_aac_err": 5
 }

@@ -14,18 +14,20 @@ from itertools import islice
 class twitter_spaces:
     def __init__(self, setDict):
         '''
-        key       |  描述
-        :-------  | :----
-        space_id  |  spaces的rest_id
-        save_path |  同主程序
-        headers   |  主程序生成
-        cookie    |  同主程序
+        key           |  描述
+        :-----------  | :----------
+        space_id      |  spaces的rest_id
+        save_path     |  同主程序
+        headers       |  主程序生成
+        cookie        |  同主程序
+        times_aac_err |  同主程序
         '''
         # 配置文件初始化
         self.spaceId = setDict['space_id']
         self.savePath = setDict['save_path']
         self.headers = setDict['headers']
         self.cookie = setDict['cookie']
+        self.timesAacErr = setDict['times_aac_err']
 
         # 通用数据初始化
         self.metaDict = {}
@@ -199,8 +201,8 @@ class twitter_spaces:
                 chunkTs = line.split('_')[1]
                 chunkNo = line.split('_')[2]
                 
-                # 重试5次，超时则跳过
-                for i in range(5):
+                # 重试，超时则跳过
+                for i in range(self.timesAacErr):
                     accData = self.__get_aac('{0}{1}'.format(dirUrl, line))
                     if isinstance(accData, str):
                         print('{time} {chunkTs} {chunkNo:>4} Failed({times})'.format(
@@ -224,69 +226,79 @@ class twitter_spaces:
                 print('{created_at}_{rest_id} download threading ended'.format(**self.metaDict))
                 return
             time.sleep(1)
-            
+
+def get_mainjs():
+    headers = {
+        'Origin': 'https://twitter.com',
+        'Referer': 'https://twitter.com/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.115 Safari/537.36',
+    }
+
+    response = requests.get('https://abs.twimg.com/responsive-web/client-web/main.1ad07545.js', headers=headers)
+    response.raise_for_status()
+    
+    queryList = re.findall('queryId:"([^"]*)",operationName:"([^"]*)",operationType:"([^"]*)"', response.text)
+    queryDict = {i[1]:{'id':i[0],'type':i[2]} for i in queryList}
+
+    return queryDict
+
+def twitter_twitlist(setDict):
+    variables = {"userId":setDict['rest_id'],"count":20,"withHighlightedLabel":True,"withTweetQuoteCount":True,"includePromotedContent":True,"withTweetResult":True,"withReactions":False,"withSuperFollowsTweetFields":False,"withSuperFollowsUserFields":False,"withUserResults":False,"withVoice":True,"withNonLegacyCard":False,"withBirdwatchPivots":False}
+    params = (('variables', json.dumps(variables ,ensure_ascii=False)),)
+
+    response = requests.get('https://twitter.com/i/api/graphql/{}/UserTweets'.format(get_mainjs()['UserTweets']['id']), headers=setDict['headers'], params=params, cookies=setDict['cookie'])
+    response.raise_for_status()
+    # 通过正则提取spaces链接
+    return re.findall('twitter.com/i/spaces/([0-9|a-z|A-Z]{13})', response.text)
+
 def main(setDict):
     '''
-    key       |是否必选|  描述
-    :-------  |:----: | :----
-    user_id   |  可选  |  用户rest_id，注意不是screen_name，默认为用户kaguramea_vov的id
-    save_path |  可选  |  文件存储路径，默认为主程序文件夹下的"./rec/{user_id}"
-    cookie    |  必选  |  账号cookie，因推特必须登录使用，无cookie无法运行
+    key           | required |  描述
+    :-------      | :------: |  :----
+    user_id       |     N    |  用户rest_id，注意不是screen_name，默认为用户kaguramea_vov的id
+    save_path     |     N    |  文件存储路径，默认为主程序文件夹下的"./rec/{user_id}"
+    cookie        |     Y    |  账号cookie，因推特必须登录使用，无cookie无法运行（未设置防错）
+    invl_twit     |     N    |  获取推文间隔，单位为秒，默认60
+    invl_twit_err |     N    |  获取推文失败时，重试间隔，单位为秒，默认10
+    times_aac_err |     N    |  获取aac片段失败时，最大重试次数，不建议太多，以防止错过后面的片段，默认5
     '''
     # 运行参数初始化
     userId = setDict.get('user_id', '1130858667547299841')
     savePath = setDict.get('save_path', './rec/{}'.format(userId))
     cookie = setDict['cookie']
     headers = {
-        'authority': 'twitter.com',
-        'sec-ch-ua': '" Not;A Brand";v="99", "Google Chrome";v="91", "Chromium";v="91"',
-        'x-twitter-client-language': 'en',
-        'x-csrf-token': cookie['ct0'],
-        'sec-ch-ua-mobile': '?0',
-        'authorization': 'Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA', # 需要通过推特api获取，应该是app认证，更改账号不会改变
-        'content-type': 'application/json',
-        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.106 Safari/537.36',
-        'x-twitter-auth-type': 'OAuth2Session',
-        'x-twitter-active-user': 'yes',
-        'accept': '*/*',
-        'sec-fetch-site': 'same-origin',
-        'sec-fetch-mode': 'cors',
-        'sec-fetch-dest': 'empty',
-        'referer': 'https://twitter.com/home',
-        'accept-language': 'en',
+        'x-csrf-token': setDict['cookie']['ct0'],
+        'Origin': 'https://twitter.com',
+        'authorization': 'Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA',
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.117 Safari/537.36',
     }
+    invlTwit = setDict.get('invl_twit', 60)
+    invlTwitErr = setDict.get('invl_twit_err', 10)
+    timesAacErr = setDict.get('times_aac_err', 5)
 
-    # count是获取推文的数量，尽量少，以降低流量使用，但不要太少，以防止连续发送多条推文时错过
-    variables = {"userId":setDict.get('user_id', '1130858667547299841'),"count":10,"withHighlightedLabel":True,"withTweetQuoteCount":True,"includePromotedContent":True,"withTweetResult":True,"withReactions":False,"withSuperFollowsTweetFields":False,"withUserResults":False,"withVoice":False,"withNonLegacyCard":True,"withBirdwatchPivots":False}
-    params = (('variables', json.dumps(variables ,ensure_ascii=False)),)
-    
     # 捕获spaces链接时使用，将获取的rest_id记录为数组，以防止重复开启录制线程
     spacesList = []
     while 1:
         try:
-            response = requests.get('https://twitter.com/i/api/graphql/TcBvfe73eyQZSx3GW32RHQ/UserTweets', headers=headers, params=params, cookies=setDict['cookie'])
-            response.raise_for_status()
-            
-            # 通过正则提取spaces链接
-            reFind = re.findall('twitter.com/i/spaces/([0-9|a-z|A-Z]{13})', response.text)
+            reFind = twitter_twitlist({'rest_id':userId, 'headers':headers, 'cookie':cookie})
             for spaceId in set(reFind):
                 if spaceId not in spacesList:
                     spacesList.append(spaceId)
-                    emp = twitter_spaces({'space_id': spaceId, 'save_path': savePath, 'headers': headers, 'cookie': cookie})
+                    emp = twitter_spaces({'space_id': spaceId, 'save_path': savePath, 'headers': headers, 'cookie': cookie, 'times_aac_err': timesAacErr})
                     infoTh = threading.Thread(target=emp.get_media_key, daemon=True)
                     infoTh.start()
                     mainTh = threading.Thread(target=emp.run, daemon=True)
                     mainTh.start()
             
             # 循环间隔不建议太低
-            time.sleep(20)
+            time.sleep(invlTwit)
 
         except Exception:
             print('{time} main {info}'.format(
                 time = datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC'), 
                 info = {'info': traceback.format_exc()}
             ))
-            time.sleep(10)
+            time.sleep(invlTwitErr)
             
 
 if __name__ == '__main__':
